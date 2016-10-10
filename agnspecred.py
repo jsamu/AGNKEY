@@ -14,7 +14,7 @@ from iraf import noao
 from iraf import imred
 from iraf import ccdred
 from iraf import specred
-import cosmics
+#import cosmics
 
 
 def imgsort():
