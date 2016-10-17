@@ -446,7 +446,7 @@ def calibrate():
 
 ###MAIN PROGRAM
 
-imgdir = '/dark/jsamuel/scripts/VLT/'
+imgdir = '/dark/jsamuel/scripts/VLT2/'
 os.chdir(imgdir)
 
 #iraf.setinstrument(instrument='rca4m',site='kpno',directory='ccddb$',review='no')
@@ -500,3 +500,4 @@ for _dir in datelist:
     correlate()
     standard()
     calibrate()
+
