@@ -5,8 +5,6 @@ import shutil
 import datetime
 import os
 import sys
-#import getopt
-#from optparse import OptionParser
 import pylab as pl
 from pyraf import iraf
 from astropy.io import fits as pyfits
@@ -14,12 +12,20 @@ from iraf import noao
 from iraf import imred
 from iraf import ccdred
 from iraf import specred
-#import cosmics
+
+IMGDIR = '/dark/jsamuel/data/VLT/'
+CALDIR = '/dark/jsamuel/data/calib/'
+OVERSC = '[1:4,*]'
+TRIM = '[200:2046,50:200]'
+
+extname1 = 'CHIP1'
+extname2 = 'CHIP2'
+stars = {'specphot-LTT7379':'l7379','specphot-LDS749B':'lds749b','specphot-EG274':'eg274','specphot-G138-31':'g13831','specphot-C-32d9927':'cd32','specphot-LTT9491':'l9491','specphot-LTT7987':'l7987'}
 
 
-def imgsort():
-    if not os.path.isdir('CHIP1'):
-        os.makedirs('CHIP1')
+def imgsort(IMGDIR,extname1,extname2):
+    if not os.path.isdir('%s%s'%(IMGDIR,)):
+        os.makedirs('%s%s'%(IMGDIR,))
     else:
         pass
         
