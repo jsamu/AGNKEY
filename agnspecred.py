@@ -371,16 +371,28 @@ def reid(refpath,idref):
 
 
 def correlate():
-    lexlist = glob.glob('LAMP*EX.fits')
-    scispec = glob.glob('AGN*EX.fits')
-    stdspec = glob.glob('STD*EX.fits')
-    speclist = scispec + stdspec
-    ref = lexlist[0]
-    ref = ref.rsplit('.fits',1)[0]
+    scilist = glob.glob('AGN*EX.fits')
+    stdlist = glob.glob('STD*EX.fits')
+    lamps = glob.glob('LAMP*EX.fits')
 
-    for spec in speclist:
+    for img in lamps:
+        hdu = pyfits.getheader(img)
+        if hdu['HIERARCH ESO DPR TECH'] == 'SPECTRUM':
+            specref = img.rsplit('.fits',1)[0]
+        elif hdu['HIERARCH ESO DPR TECH'] == 'MOS':
+            mosref = img.rsplit('.fits',1)[0]
+
+
+
+    for spec in scilist:
         spec = spec.rsplit('.fits',1)[0]
-        iraf.refspectra(spec,references=ref,sort='',group='',confirm='no',assign='yes')
+        iraf.refspectra(spec,references=specref,sort='',group='',confirm='no',assign='yes')
+        name = spec.rsplit('_EX',1)[0]+'_EL'
+        iraf.dispcor(spec,output=name)
+
+    for spec in stdlist:
+        spec = spec.rsplit('.fits',1)[0]
+        iraf.refspectra(spec,references=mosref,sort='',group='',confirm='no',assign='yes')
         name = spec.rsplit('_EX',1)[0]+'_EL'
         iraf.dispcor(spec,output=name)
 
