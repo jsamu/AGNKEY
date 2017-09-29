@@ -1,14 +1,14 @@
 import numpy as np
 from astropy.io import ascii
 from astropy.table import Table
-import seaborn as sns
+#import seaborn as sns
 from matplotlib import pyplot as pl
 import scipy
 from astropy.modeling import models, fitting
 import collections
 
-sns.set_style("whitegrid")
-sns.set_context("notebook", font_scale=1.5, rc={"lines.linewidth": 2.5})
+#sns.set_style("whitegrid")
+#sns.set_context("notebook", font_scale=1.5, rc={"lines.linewidth": 2.5})
 
 
 class Agn(object):
@@ -36,7 +36,7 @@ class Agn(object):
             else:
                 pass
 
-        return epoch_dict  
+        return epoch_dict
     
     def line_disp(self, hb_limits, bkgd_limits, DATA_DIR, OBJ_NAME, flux_scale):
         """
@@ -45,64 +45,45 @@ class Agn(object):
         """
         epoch_dict_rmsd = self.load_epochs(DATA_DIR, OBJ_NAME)
         fluxdata_rmsd, flux_series_rmsd = self.stack_data(epoch_dict_rmsd, self.filename, flux_scale)
-
-        '''
-        #calculate RMS spectrum
-        #this is not the correct RMS, needs to be updated to show only variability
-        sq_error = 2.*flux_series1[:,1,:]*flux_series1[:,2,:]
-        mean_sq = np.average(flux_series1[:,1,:]**2., weights=sq_error**(2.), axis=0)
-        rms = np.sqrt(mean_sq)
-        rms_err = sq_error/(2.*rms)
-        rms_data = np.vstack([fluxdata1[0], rms, rms_err])
-
-        contin_fit1 = continuum_linfit(rms_data, bkgd_limits)
-        x = rms_data[0]
-        contin_model = contin_fit1[1] + contin_fit1[0]*x
-
-        wavelength = rms_data[0]
-        flux = rms_data[1] - contin_model# subtracting linear continuum before fit
-        flux_error = rms_data[2]
-
-        line_mask = (x >= hb_limits[0]) & (x <= hb_limits[1])
-        wavelength_fit = wavelength[line_mask]
-        flux_fit = flux[line_mask]
-
-        #fit gaussian to hbeta line
-        g_init = models.Gaussian1D(amplitude=(1.), mean=4950., stddev=25.)
-        fit_g = fitting.LevMarLSQFitter()
-        g = fit_g(g_init, wavelength_fit, flux_fit)
-
-        fwhm = 2.*np.sqrt(2.*np.log(2.))*g.stddev.value
-        c = 3.*10.**5.
-        lambda0 = g.mean.value
-        fwhm2 = fwhm*c/lambda0
-
-        v_sig = g.stddev.value
-        v_sig_km = g.stddev.value*c/lambda0
-        v_disp = v_sig_km*np.sqrt(3.)
-        '''
-
-        #new calculation 9/28/17
-
-        #calculate RMS deviation
-        mean_spectrum = np.average(flux_series_rmsd[:,1,:], axis=0)
         wavelength = fluxdata_rmsd[0]
-        rmsd = np.sqrt((1./self.num_epochs)*np.sum((flux_series_rmsd[:,1,:] - mean_spectrum)**2., axis=0))
-        rmsd_spec = np.vstack([wavelength, rmsd])
 
-        #fit and subtract linear continuum before fitting the variable part of the Hbeta line from the RMS spectrum
-        contin_fit_rmsd = continuum_linfit(rmsd_spec, bkgd_limits)
-        contin_model = contin_fit_rmsd[1] + contin_fit_rmsd[0]*wavelength
-        flux_subtracted = rmsd_spec[1] - contin_model# subtracting linear continuum before fit
+        #subtract linear continuum from spectrum of each epoch
+        continuum_subtracted_fluxseries = []
 
-        #select line region of data to be fit
+        for epoch in flux_series_rmsd:
+            continuum_fit = continuum_linfit(epoch, bkgd_limits)
+            continuum_flux = continuum_fit[1] + continuum_fit[0]*epoch[0]
+            continuum_subtracted_flux = epoch[1] - continuum_flux
+
+            continuum_subtracted_epoch = np.vstack([epoch[0], continuum_subtracted_flux])
+            continuum_subtracted_fluxseries.append(continuum_subtracted_epoch)
+
+        continuum_subtracted_fluxseries = np.array(continuum_subtracted_fluxseries)
+
+        #calculate mean and RMS deviation spectra
+        mean_flux = np.average(continuum_subtracted_fluxseries[:,1,:], axis=0)
+        mean_spectrum = np.vstack([wavelength, mean_flux])
+        rmsd = np.sqrt((1./self.num_epochs)*np.sum((continuum_subtracted_fluxseries[:,1,:] - mean_flux)**2., axis=0))
+        rmsd_spectrum = np.vstack([wavelength, rmsd])
+
+        #constrain the spectra to only the line region with relevant surrounding continuum
+        relevant_mask = (wavelength >= bkgd_limits[0]) & (wavelength <= bkgd_limits[3])
+        wavelength = wavelength[relevant_mask]
+        mean_spectrum = np.compress(relevant_mask, mean_spectrum, axis=1)
+        rmsd_spectrum = np.compress(relevant_mask, rmsd_spectrum, axis=1)
+
+        #select emission line region of data to be fit
         line_mask = (wavelength >= hb_limits[0]) & (wavelength <= hb_limits[1])
         wavelength_fit = wavelength[line_mask]
-        flux_fit = flux_subtracted[line_mask]
+        flux_fit = rmsd_spectrum[1][line_mask]
 
         #fit gaussian to hbeta line
         #these parameters need to not be hard coded here
-        g_init = models.Gaussian1D(amplitude=(1.), mean=4950., stddev=25.)
+        mean_guess = np.median(wavelength_fit)
+        amplitude_guess = np.max(flux_fit)
+        stddev_guess = (hb_limits[1] - mean_guess)/2.
+
+        g_init = models.Gaussian1D(amplitude=(amplitude_guess), mean=mean_guess, stddev=stddev_guess)
         fit_g = fitting.LevMarLSQFitter()
         g = fit_g(g_init, wavelength_fit, flux_fit)
 
@@ -115,39 +96,23 @@ class Agn(object):
         v_sig_km = v_sig*c/lambda0
         #I think we only care about line of sight velocity dispersion here
         #v_disp = v_sig_km*np.sqrt(3.)
+        
+        f, (ax1, ax2) = pl.subplots(2, 1, sharex=True, figsize=(11,7))
 
-        """
-        #create and show a figure with RMS spectrum, fit, and fit params on it. uncomment save to keep.
-        pl.figure(figsize=(12,8))
-        pl.plot(x, rms_data[1], 'b.')
-        pl.plot(wavelength_fit, flux_fit + contin_model[line_mask], 'k.')
-        pl.plot(wavelength_fit, g(wavelength_fit) + contin_model[line_mask], 'r', label='Gaussian')
-        pl.title('RMS spectrum fit with Gaussian')
-        pl.xlabel('Wavelength ($\AA$)')
-        pl.ylabel('Flux ($erg/s/cm^2$)')
-        pl.text(min(x), 0.8*max(fluxdata1[1]), r'$FWHM = %.2f \AA = %i  km/s$'%(fwhm, fwhm2))
-        pl.text(min(x), 0.7*max(fluxdata1[1]), r'$\sigma = %.2f \AA = %i  km/s$'%(v_sig, v_sig_km))
-        pl.text(min(x), 0.6*max(fluxdata1[1]), r'$\sigma_{disp} = %i km/s$'%(v_disp))
-        #pl.savefig('./figures/fit_spec.png')
+        ax1.plot(mean_spectrum[0], mean_spectrum[1])
+
+        ax2.plot(rmsd_spectrum[0], rmsd_spectrum[1], 'b')
+        ax2.plot(wavelength_fit, flux_fit, 'k')
+        ax2.plot(wavelength_fit, g(wavelength_fit), 'r', label='Gaussian')
+        #ax2.title('RMS spectrum fit with Gaussian (Object: %s)'%(OBJ_NAME))
+        #ax2.xlabel('Wavelength ($\AA$)')
+        #ax2.ylabel('Flux ($erg/s/cm^2$)')
+        #ax2.text(min(rmsd_spectrum[0]), 0.8*max(flux_fit), r'$FWHM = %.2f \AA = %i  km/s$'%(fwhm, fwhm2))
+        #ax2.text(min(rmsd_spectrum[0]), 0.6*max(flux_fit), r'$\sigma = %.2f \AA = %i  km/s$'%(v_sig, v_sig_km))
+
+        #pl.savefig('./figures/lightcurves.png')
         pl.show()
-        """
-
-        #create and show a figure with RMS spectrum, fit, and fit params on it. uncomment save to keep.
-        pl.figure(figsize=(12,8))
-        pl.plot(rmsd_spec[0], flux_subtracted, 'b')
-        pl.plot(wavelength_fit, flux_fit, 'k')
-        pl.plot(wavelength_fit, g(wavelength_fit), 'r', label='Gaussian')
-        pl.title('RMS spectrum fit with Gaussian')
-        pl.xlabel('Wavelength ($\AA$)')
-        pl.ylabel('Flux ($erg/s/cm^2$)')
-        pl.text(min(rmsd_spec[0]), 0.8*max(flux_fit), r'$FWHM = %.2f \AA = %i  km/s$'%(fwhm, fwhm2))
-        pl.text(min(rmsd_spec[0]), 0.6*max(flux_fit), r'$\sigma = %.2f \AA = %i  km/s$'%(v_sig, v_sig_km))
-        #pl.text(min(rmsd_spec[0]), 0.6*max(flux_fit), r'$\sigma_{disp} = %i km/s$'%(v_disp))
-        #pl.savefig('./figures/fit_spec.png')
-        pl.show()
-
-        #return v_disp
-        print v_sig_km
+        
         return v_sig_km
 
     def plot_spec(self, hb_limits, bkgd_limits, flux_scale):
